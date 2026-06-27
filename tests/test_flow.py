@@ -7,7 +7,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from database.connection import get_db, init_db
 from database.models import ReconciliationRun, ComparisonDetail, ValidationError
-from services.file_reader import read_file
 from services.validator import validate_dataframe
 from services.comparer import reconcile_prices
 from services.db_persistence import (

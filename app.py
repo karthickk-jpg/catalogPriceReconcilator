@@ -20,7 +20,7 @@ except Exception as e:
     st.error("Failed to connect or initialize the local database. See application logs for details.")
     logger.critical(f"Critical error during database setup: {str(e)}", exc_info=True)
 
-# Define native Streamlit multi-page views
+# Define native Streamlit dashboard view
 dashboard_page = st.Page(
     "views/dashboard.py", 
     title="Dashboard", 
@@ -28,30 +28,8 @@ dashboard_page = st.Page(
     default=True
 )
 
-history_page = st.Page(
-    "views/history.py", 
-    title="Run History Audit", 
-    icon="📜"
-)
-
-reconcile_page = st.Page(
-    "views/reconcile.py", 
-    title="New Reconciliation Run", 
-    icon="🔄"
-)
-
-settings_page = st.Page(
-    "views/settings.py", 
-    title="Portal Settings", 
-    icon="⚙️"
-)
-
-# Build navigation menu structure
-pg = st.navigation({
-    "Overview": [dashboard_page],
-    "Operations": [reconcile_page, history_page],
-    "Administration": [settings_page]
-})
+# Build navigation menu structure for Dashboard-only
+pg = st.navigation([dashboard_page])
 
 # Run navigation engine
 pg.run()

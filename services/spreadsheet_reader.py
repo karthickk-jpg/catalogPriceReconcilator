@@ -12,58 +12,58 @@ from config.settings import (
     GOOGLE_SHEET_ID,
     SETTING_GOOGLE_SHEET_ID,
     SUPPORTED_PLATFORMS,
+    SKU_KEYWORDS,
+    PRICE_KEYWORDS,
 )
 
-from services.file_reader import suggest_mappings
 from utils.helpers import get_logger
 
 logger = get_logger("services.spreadsheet_reader")
 
 
-def _use_google_sheets(session: Optional[Session]) -> bool:
-    # This function is now obsolete as Google Sheets is the only source.
-    return True
-
-
-# NOTE: Excel workbook functions are obsolete in Google-only mode.
-# Keep functions referenced by older UI code, but resolve to a no-op path.
-
-def get_workbook_path(session: Optional[Session] = None) -> Path:
-    """Google-only mode: no local workbook path.
-
-    Returns a non-existent path so workbook_exists/workbook_last_modified
-    behave as 'not available'.
+def suggest_mappings(df: pd.DataFrame) -> Tuple[Optional[str], Optional[str]]:
+    """Scans the DataFrame columns and attempts to auto-suggest column names 
+    representing the SKU and Price based on keyword settings.
     """
-    return Path("./CPRP_GOOGLE_ONLY_NO_WORKBOOK.xlsx")
+    sku_col = None
+    price_col = None
 
+    # Normalise headers to lowercase for keyword matching
+    columns = list(df.columns)
+    lower_columns = [col.lower().strip() for col in columns]
 
+    # Find SKU Column suggestion
+    for kw in SKU_KEYWORDS:
+        if kw in lower_columns:
+            idx = lower_columns.index(kw)
+            sku_col = columns[idx]
+            break
+    
+    # If no exact match, look for contains matching for SKU
+    if not sku_col:
+        for col in columns:
+            col_lower = col.lower()
+            if any(kw in col_lower for kw in SKU_KEYWORDS if len(kw) > 2):
+                sku_col = col
+                break
 
-def workbook_exists(path: Optional[Path] = None, session: Optional[Session] = None) -> bool:
-    """Returns True if the configured master workbook exists on disk."""
-    target = path or get_workbook_path(session)
-    return target.is_file()
+    # Find Price Column suggestion
+    for kw in PRICE_KEYWORDS:
+        if kw in lower_columns:
+            idx = lower_columns.index(kw)
+            price_col = columns[idx]
+            break
 
+    # If no exact match, look for contains matching for Price
+    if not price_col:
+        for col in columns:
+            col_lower = col.lower()
+            if any(kw in col_lower for kw in PRICE_KEYWORDS if len(kw) > 2):
+                price_col = col
+                break
 
-def get_workbook_last_modified(path: Optional[Path] = None, session: Optional[Session] = None) -> Optional[datetime]:
-    """Returns the filesystem last-modified timestamp of the master workbook."""
-    target = path or get_workbook_path(session)
-    if not target.is_file():
-        return None
-    return datetime.fromtimestamp(target.stat().st_mtime)
-
-
-def list_workbook_sheets(path: Optional[Path] = None, session: Optional[Session] = None) -> list[str]:
-    """Returns sheet names present in the master workbook."""
-    raise NotImplementedError("Workbook sheet listing is not supported in Google Sheets mode.")
-
-
-def read_sheet(
-    sheet_name: str,
-    path: Optional[Path] = None,
-    session: Optional[Session] = None,
-) -> pd.DataFrame:
-    """Reads a single sheet from the master workbook into a DataFrame."""
-    raise NotImplementedError("Reading individual workbook sheets is not supported in Google Sheets mode.")
+    logger.info(f"Auto-mapping suggestions: SKU='{sku_col}', Price='{price_col}'")
+    return sku_col, price_col
 
 
 def read_all_platform_sheets(
@@ -93,8 +93,6 @@ def read_all_platform_sheets(
         service_account_json_path=service_account_json_path,
         platform_sheet_map=platform_sheet_map,
     )
-
-
 
 
 def resolve_column_mapping(

@@ -10,7 +10,7 @@ def reconcile(payload: dict) -> dict:
     """Run a reconciliation end-to-end.
 
     Phase 2 wiring:
-    API -> ingestion/google_adapter -> core/engine -> persistence
+    API -> services/spreadsheet_reader -> core/engine -> persistence
 
     NOTE: payload is accepted for future parameterization; current engine uses
     thresholds from payload if provided, otherwise defaults.
@@ -21,7 +21,7 @@ def reconcile(payload: dict) -> dict:
 
     from config.settings import DEFAULT_LOW_THRESHOLD, DEFAULT_MEDIUM_THRESHOLD
 
-    from ingestion.google_adapter import load_google_platform_data
+    from services.spreadsheet_reader import read_all_platform_sheets
     from core.engine import ReconciliationInput, run_reconciliation_engine
 
     # Thresholds (optional)
@@ -30,8 +30,8 @@ def reconcile(payload: dict) -> dict:
 
     # Persistence: create run, save comparison details
     with get_db() as db:  # type: Session
-        # ingestion adapter already needs session for mappings/settings
-        sheets = load_google_platform_data(session=db)
+        # Pull platform sheets directly from Google Sheets
+        sheets = read_all_platform_sheets(session=db)
 
         # Column mapping is currently resolved inside services.spreadsheet_reader.resolve_column_mapping
         # called by spreadsheet_reader.read_all_platform_sheets + resolve_column_mapping.
