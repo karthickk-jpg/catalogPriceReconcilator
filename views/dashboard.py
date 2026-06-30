@@ -1,7 +1,9 @@
-import streamlit as st
-import pandas as pd
+import os
 from datetime import datetime
+
+import pandas as pd
 import requests
+import streamlit as st
 
 from config.settings import SUPPORTED_PLATFORMS
 from utils.helpers import get_logger
@@ -46,18 +48,63 @@ def _get_last_refreshed_ts() -> str:
     return ts.strftime("%Y-%m-%d %H:%M:%S") if ts else "Not yet"
 
 
+def _run_local_reconciliation() -> dict:
+    """Fallback reconciliation path for deployments without a separate API process."""
+    from database.connection import get_db
+    from services.spreadsheet_reader import read_all_platform_sheets, resolve_column_mapping
+    from core.engine import ReconciliationInput, run_reconciliation_engine
+
+    with get_db() as db:
+        sheets = read_all_platform_sheets(session=db)
+        if "WMS" not in sheets or sheets["WMS"].empty:
+            return {"success": False, "message": "WMS sheet missing or empty", "run_summary": {}, "comparison_df": pd.DataFrame()}
+
+        wms_sku_col, wms_price_col = resolve_column_mapping("WMS", sheets["WMS"])
+        marketplace_datasets = {}
+        from config.settings import SUPPORTED_PLATFORMS
+
+        for platform in SUPPORTED_PLATFORMS:
+            if platform not in sheets or sheets[platform].empty:
+                continue
+            sku_col, price_col = resolve_column_mapping(platform, sheets[platform])
+            marketplace_datasets[platform] = (sheets[platform], sku_col, price_col)
+
+        engine_inp = ReconciliationInput(
+            wms_df=sheets["WMS"],
+            wms_sku_col=wms_sku_col,
+            wms_price_col=wms_price_col,
+            marketplace_datasets=marketplace_datasets,
+            low_threshold=1.0,
+            medium_threshold=5.0,
+        )
+        result = run_reconciliation_engine(engine_inp)
+        return {
+            "success": result.success,
+            "message": result.message,
+            "run_summary": result.run_summary or {},
+            "comparison_df": result.comparison_df if result.comparison_df is not None else pd.DataFrame(),
+        }
+
+
 def get_live_data():
-    """UI-only: calls FastAPI /reconcile and returns JSON payload."""
+    """Calls the reconcile API when available and falls back to local execution otherwise."""
+    api_base_url = os.getenv("CPRP_API_BASE_URL", "http://127.0.0.1:8004").rstrip("/")
     try:
-        resp = requests.post("http://127.0.0.1:8004/reconcile", json={"run_type": "historical"}, timeout=120)
+        resp = requests.post(f"{api_base_url}/reconcile", json={"run_type": "historical"}, timeout=120)
         resp.raise_for_status()
         data = resp.json()
         comparison_rows = data.get("comparison_rows") or data.get("comparison") or data.get("comparison_df")
         data["comparison_df"] = pd.DataFrame(comparison_rows) if comparison_rows else pd.DataFrame()
         return data
     except Exception as exc:
-        logger.error(f"API reconcile failed: {exc}", exc_info=True)
-        return {"success": False, "message": str(exc), "run_summary": {}, "comparison_df": pd.DataFrame()}
+        logger.warning(f"API reconcile unavailable, using local fallback: {exc}", exc_info=True)
+        return _run_local_reconciliation()
+
+
+@st.cache_data(show_spinner=False, ttl=60, max_entries=1)
+def _get_cached_live_data():
+    """Reuse the last successful reconciliation result for a short window."""
+    return get_live_data()
 
 
 def _render_kpi_card(title: str, value: int) -> None:
@@ -116,7 +163,7 @@ with header_right:
         st.rerun()
 
 try:
-    live_data_result = get_live_data()
+    live_data_result = _get_cached_live_data()
     if live_data_result.get("success"):
         st.session_state["last_refreshed_ts"] = datetime.now()
     else:

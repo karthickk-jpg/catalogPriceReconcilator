@@ -15,7 +15,7 @@ st.set_page_config(
 
 # Initialize database schemas on application startup
 try:
-    pass  # init_db() is removed as part of database migration
+    init_db()
 except Exception as e:
     st.error("Failed to connect or initialize the local database. See application logs for details.")
     logger.critical(f"Critical error during database setup: {str(e)}", exc_info=True)
