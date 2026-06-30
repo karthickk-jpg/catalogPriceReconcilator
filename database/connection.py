@@ -35,7 +35,7 @@ def get_db():
     except Exception as e:
         session.rollback()
         logger.error(f"Database session rollback due to exception: {str(e)}", exc_info=True)
-        raise e
+        raise
     finally:
         session.close()
 
@@ -49,7 +49,7 @@ def init_db():
         logger.info("Database schemas initialized successfully.")
     except Exception as e:
         logger.error(f"Failed to initialize database tables: {str(e)}", exc_info=True)
-        raise e
+        raise
 
 
 def _apply_migrations():

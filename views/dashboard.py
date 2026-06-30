@@ -4,7 +4,6 @@ from datetime import datetime
 import requests
 
 from config.settings import SUPPORTED_PLATFORMS
-from services.google_sheet_reader import debug_google_connection
 from utils.helpers import get_logger
 
 logger = get_logger("views.dashboard")
@@ -38,8 +37,8 @@ st.markdown(
 
 st.set_page_config(layout="wide")
 
-st.title("Catalog Price Reconciliation Portal")
-st.caption("Live comparison of WMS prices against marketplaces")
+st.title("Catalog Price Validation Portal")
+# st.caption("Live comparison of WMS prices against marketplaces")
 
 
 def _get_last_refreshed_ts() -> str:
@@ -47,7 +46,6 @@ def _get_last_refreshed_ts() -> str:
     return ts.strftime("%Y-%m-%d %H:%M:%S") if ts else "Not yet"
 
 
-@st.cache_data(show_spinner="Refreshing via API...")
 def get_live_data():
     """UI-only: calls FastAPI /reconcile and returns JSON payload."""
     try:
@@ -71,14 +69,13 @@ def _render_kpi_card(title: str, value: int) -> None:
 
 def _to_display_df(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
-        return pd.DataFrame(columns=["Design No", "Marketplace", "WMS Price", "Marketplace Price", "Difference"])
-    return df[["sku", "marketplace", "wms_price", "marketplace_price", "price_diff"]].rename(
+        return pd.DataFrame(columns=["Design No", "Channel", "WMS Price", "Channel price"])
+    return df[["sku", "marketplace", "wms_price", "marketplace_price"]].rename(
         columns={
             "sku": "Design No",
-            "marketplace": "Marketplace",
+            "marketplace": "Channel",
             "wms_price": "WMS Price",
-            "marketplace_price": "Marketplace Price",
-            "price_diff": "Difference",
+            "marketplace_price": "Channel price",
         }
     )
 
@@ -91,61 +88,32 @@ def _download_for(platform: str, col_key: str, mismatch_df: pd.DataFrame) -> Non
     if mismatch_df.empty:
         return
     dfp = mismatch_df[mismatch_df["marketplace"] == platform]
-    out = dfp[["sku", "marketplace", "wms_price", "marketplace_price", "price_diff", "percent_diff"]].rename(
+    out = dfp[["sku", "marketplace", "wms_price", "marketplace_price"]].rename(
         columns={
             "sku": "Design No",
-            "marketplace": "Marketplace",
+            "marketplace": "Channel",
             "wms_price": "WMS Price",
-            "marketplace_price": "Marketplace Price",
-            "price_diff": "Difference",
-            "percent_diff": "Difference %",
+            "marketplace_price": "Channel price",
         }
     )
     st.download_button(
         f"Download {platform} Mismatches",
         data=_to_csv_bytes(out),
-        file_name=f"CPRP_Live_Mismatches_{platform}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        file_name=f"CPRP_Mismatches_{platform}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
         mime="text/csv",
         key=col_key,
         use_container_width=True,
     )
 
 
-left, right = st.columns([2, 1])
-with left:
+header_left, header_right = st.columns([3, 1])
+with header_left:
+    # st.markdown("#### Marketplace reconciliation powered by Google Sheets")
     st.write(f"Last Updated: {_get_last_refreshed_ts()}")
-with right:
-    st.write("Google Sheets Status: Connected")
-
-st.session_state.setdefault("_google_debug_clicked", False)
-cols = st.columns([2, 1])
-with cols[0]:
-    if st.button("Debug Google Connection", type="secondary", use_container_width=True):
-        st.session_state["_google_debug_clicked"] = True
-
-if st.session_state["_google_debug_clicked"]:
-    st.subheader("🧪 Debug Google Connection")
-    with st.spinner("Connecting to Google Sheets..."):
-        dbg_payload = debug_google_connection()
-
-    if dbg_payload.get("success"):
-        st.success("Google connection successful")
-        st.write(f"Sheet ID: {dbg_payload.get('sheet_id')}")
-        st.write(f"Service account email: {dbg_payload.get('service_account_email') or 'N/A'}")
-        st.write("Worksheets:")
-        st.code("\n".join(dbg_payload.get("worksheets") or []))
-        st.write("Row counts:")
-        st.json(dbg_payload.get("row_counts") or {})
-        with st.expander("WMS sample (first 5 rows)"):
-            st.dataframe(pd.DataFrame(dbg_payload.get("wms_sample") or []), use_container_width=True)
-        with st.expander("Amazon sample (first 5 rows)"):
-            st.dataframe(pd.DataFrame(dbg_payload.get("amazon_sample") or []), use_container_width=True)
-    else:
-        st.error(dbg_payload.get("error", "Google debug failed"))
-
-if st.button("Refresh", type="secondary"):
-    st.cache_data.clear()
-    st.rerun()
+with header_right:
+    if st.button("Refresh dashboard", type="secondary", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
 try:
     live_data_result = get_live_data()
@@ -163,6 +131,13 @@ try:
         if not comparison_df.empty
         else pd.DataFrame()
     )
+    if not mismatch_df.empty:
+        severity_rank = {"Low Mismatch": 1, "Medium Mismatch": 2, "Critical Mismatch": 3}
+        mismatch_df = mismatch_df.copy()
+        mismatch_df["_severity_rank"] = mismatch_df["severity"].map(severity_rank)
+        mismatch_df = mismatch_df.sort_values(["marketplace", "sku", "_severity_rank"], ascending=[True, True, False])
+        mismatch_df = mismatch_df.drop_duplicates(subset=["marketplace", "sku"], keep="first")
+        mismatch_df = mismatch_df.drop(columns=["_severity_rank"])
     platform_mismatch_counts = {
         p: int((mismatch_df["marketplace"] == p).sum()) for p in SUPPORTED_PLATFORMS
     }
@@ -171,18 +146,14 @@ try:
 except Exception as exc:
     st.exception(exc)
 
-c1, c2, c3, c4, c5, c6 = st.columns(6)
-with c1:
+summary_platforms = list(SUPPORTED_PLATFORMS)
+summary_cols = st.columns(len(summary_platforms) + 2)
+with summary_cols[0]:
     _render_kpi_card("Total Design Nos", total_design_nos)
-with c2:
-    _render_kpi_card("Amazon Mismatches", platform_mismatch_counts.get("Amazon", 0))
-with c3:
-    _render_kpi_card("Flipkart Mismatches", platform_mismatch_counts.get("Flipkart", 0))
-with c4:
-    _render_kpi_card("Myntra Mismatches", platform_mismatch_counts.get("Myntra", 0))
-with c5:
-    _render_kpi_card("Shopify Mismatches", platform_mismatch_counts.get("Shopify", 0))
-with c6:
+for idx, platform in enumerate(summary_platforms, start=1):
+    with summary_cols[idx]:
+        _render_kpi_card(f"{platform} Mismatches", platform_mismatch_counts.get(platform, 0))
+with summary_cols[len(summary_platforms) + 1]:
     _render_kpi_card("Total Mismatches", total_mismatches)
 
 with st.container():
@@ -192,7 +163,7 @@ with st.container():
     with f2:
         search_design_no = st.text_input("Design No Search")
     with f3:
-        show_mismatches_only = st.toggle("Show Mismatches Only", value=True)
+        show_mismatches_only = st.toggle("Show mismatches only", value=True)
 
 base_df = mismatch_df if show_mismatches_only else comparison_df
 filtered = base_df.copy()
@@ -204,17 +175,19 @@ if query:
 
 st.markdown("### Mismatch Details" if show_mismatches_only else "### All Reconciliation Results")
 
-display_df = _to_display_df(filtered)
-st.dataframe(display_df, use_container_width=True)
+export_cols = st.columns(len(SUPPORTED_PLATFORMS))
+for idx, platform in enumerate(SUPPORTED_PLATFORMS):
+    with export_cols[idx]:
+        st.markdown(f"**{platform}**")
+        count = platform_mismatch_counts.get(platform, 0)
+        st.write(f"{count:,} mismatches")
+        if count > 0:
+            _download_for(platform, f"dl_{platform.lower()}", mismatch_df)
+        else:
+            st.caption("No export available")
 
-st.divider()
-with st.container():
-    d1, d2, d3, d4 = st.columns(4)
-    with d1:
-        _download_for("Amazon", "dl_amazon", mismatch_df)
-    with d2:
-        _download_for("Flipkart", "dl_flipkart", mismatch_df)
-    with d3:
-        _download_for("Myntra", "dl_myntra", mismatch_df)
-    with d4:
-        _download_for("Shopify", "dl_shopify", mismatch_df)
+if filtered.empty:
+    st.info("No records found for the selected filters. Adjust platform or search criteria to view data.")
+else:
+    display_df = _to_display_df(filtered)
+    st.dataframe(display_df, use_container_width=True)

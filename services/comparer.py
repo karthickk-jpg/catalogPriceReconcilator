@@ -54,10 +54,9 @@ def reconcile_prices(
     keep_cols = [wms_sku_col, wms_price_col] + enrich_cols
     wms_clean = wms_df[keep_cols].copy()
 
-    # Normalize SKU
+    # Normalize SKU and preserve duplicate rows so every WMS price row can be compared
     wms_clean["norm_sku"] = wms_clean[wms_sku_col].astype(str).apply(normalize_sku)
     wms_clean = wms_clean[wms_clean["norm_sku"] != ""]
-    wms_clean = wms_clean.drop_duplicates(subset=["norm_sku"], keep="last")
 
     # Convert WMS price to float safely
     wms_clean["wms_price_f"] = _safe_float_series(wms_clean[wms_price_col])
@@ -74,6 +73,7 @@ def reconcile_prices(
 
     all_comparison_rows: List[Dict[str, Any]] = []
     unique_skus_global: set = set()
+    mismatch_sku_keys: set = set()
     exact_matches_cnt = mismatches_cnt = missing_wms_cnt = missing_marketplace_cnt = critical_cnt = 0
 
     # --- 2. Process each marketplace ---
@@ -83,7 +83,6 @@ def reconcile_prices(
         mkt_clean = mkt_df[[mkt_sku_col, mkt_price_col]].copy()
         mkt_clean["norm_sku"] = mkt_clean[mkt_sku_col].astype(str).apply(normalize_sku)
         mkt_clean = mkt_clean[mkt_clean["norm_sku"] != ""]
-        mkt_clean = mkt_clean.drop_duplicates(subset=["norm_sku"], keep="last")
         mkt_clean["mkt_price_f"] = _safe_float_series(mkt_clean[mkt_price_col])
         mkt_clean = mkt_clean.rename(columns={mkt_sku_col: "_mkt_sku_raw"})
 
@@ -151,15 +150,28 @@ def reconcile_prices(
 
         # --- 5. Count metrics ---
         exact_matches_cnt   += int((merged["severity"] == "Exact Match").sum())
-        mismatches_cnt      += int(merged["severity"].isin(["Low Mismatch", "Medium Mismatch", "Critical Mismatch"]).sum())
         missing_wms_cnt     += int((merged["severity"] == "Missing in WMS").sum())
         missing_marketplace_cnt += int((merged["severity"] == "Missing in Marketplace").sum())
         critical_cnt        += int((merged["severity"] == "Critical Mismatch").sum())
 
         # --- 6. Build output rows ---
         for _, row in merged.iterrows():
+            severity = row["severity"]
+            raw_sku = row.get("sku_display")
+            fallback_sku = row.get("norm_sku")
+            sku_value = raw_sku
+            if pd.isna(sku_value) or str(sku_value).strip() in {"", "nan", "none", "null"}:
+                sku_value = fallback_sku
+            if pd.isna(sku_value) or str(sku_value).strip() in {"", "nan", "none", "null"}:
+                sku_value = "UNKNOWN"
+
+            if severity in ["Low Mismatch", "Medium Mismatch", "Critical Mismatch"]:
+                mismatch_sku_keys.add((platform, sku_value, row.get("norm_sku")))
+            if severity == "Exact Match":
+                exact_matches_cnt += 1
+
             all_comparison_rows.append({
-                "sku":                row["sku_display"],
+                "sku":                str(sku_value),
                 "product_name":       row.get("product_name"),
                 "brand":              row.get("brand"),
                 "category":           row.get("category"),
@@ -175,6 +187,7 @@ def reconcile_prices(
         logger.info(f"  {platform}: {len(merged):,} records processed.")
 
     elapsed = time.perf_counter() - t_start
+    mismatches_cnt = len(mismatch_sku_keys)
     run_summary = {
         "total_skus":           len(unique_skus_global),
         "exact_matches":        exact_matches_cnt,

@@ -7,7 +7,7 @@ logger = get_logger("app")
 
 # Page Configuration
 st.set_page_config(
-    page_title="Catalog Price Reconciliation Portal",
+    page_title="Catalog Price Validation Portal",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded"

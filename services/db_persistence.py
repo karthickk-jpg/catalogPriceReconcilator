@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
+import pandas as pd
 from database.models import ReconciliationRun, UploadedFile, ComparisonDetail, ValidationError, PlatformMapping
 from utils.helpers import get_logger
 
@@ -41,7 +42,7 @@ def save_platform_mapping(session: Session, platform: str, sku_col: str, price_c
     except Exception as e:
         session.rollback()
         logger.error(f"Failed to save platform mapping for {platform}: {str(e)}", exc_info=True)
-        raise e
+        raise
 
 
 def create_reconciliation_run(session: Session, run_type: str = "historical", run_name: Optional[str] = None) -> int:
@@ -60,7 +61,7 @@ def create_reconciliation_run(session: Session, run_type: str = "historical", ru
     except Exception as e:
         session.rollback()
         logger.error(f"Failed to create reconciliation run record: {str(e)}", exc_info=True)
-        raise e
+        raise
 
 
 def update_reconciliation_run_status(
@@ -93,7 +94,7 @@ def update_reconciliation_run_status(
     except Exception as e:
         session.rollback()
         logger.error(f"Failed to update reconciliation run ID={run_id}: {str(e)}", exc_info=True)
-        raise e
+        raise
 
 
 def save_uploaded_file(
@@ -123,7 +124,7 @@ def save_uploaded_file(
     except Exception as e:
         session.rollback()
         logger.error(f"Failed to save uploaded file log: {str(e)}", exc_info=True)
-        raise e
+        raise
 
 
 def save_validation_errors(
@@ -155,7 +156,7 @@ def save_validation_errors(
     except Exception as e:
         session.rollback()
         logger.error(f"Failed to save validation errors: {str(e)}", exc_info=True)
-        raise e
+        raise
 
 
 def save_comparison_details(
@@ -170,9 +171,14 @@ def save_comparison_details(
     try:
         db_details = []
         for row in comparison_rows:
+            raw_sku = row.get("sku")
+            sku_value = raw_sku
+            if raw_sku is None or pd.isna(raw_sku) or str(raw_sku).strip() in {"", "nan", "none", "null"}:
+                sku_value = "UNKNOWN"
+
             db_details.append(ComparisonDetail(
                 run_id=run_id,
-                sku=row.get("sku"),
+                sku=str(sku_value),
                 product_name=row.get("product_name"),
                 brand=row.get("brand"),
                 category=row.get("category"),
@@ -191,7 +197,7 @@ def save_comparison_details(
     except Exception as e:
         session.rollback()
         logger.error(f"Failed to save comparison details: {str(e)}", exc_info=True)
-        raise e
+        raise
 
 
 def get_live_snapshot_run(session: Session) -> Optional[ReconciliationRun]:

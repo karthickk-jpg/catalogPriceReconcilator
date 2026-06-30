@@ -21,7 +21,7 @@ DATABASE_PATH = BASE_DIR / "cprp.db"
 DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 
 # Reconciliation Configuration
-SUPPORTED_PLATFORMS = ["Amazon", "Flipkart", "Myntra", "Shopify"]
+SUPPORTED_PLATFORMS = ["Amazon", "Flipkart", "Myntra", "Shopify", "Eternz", "Tata Cliq"]
 
 # Google Sheets configuration
 # NOTE: WMS remains the master source of truth.
@@ -33,6 +33,8 @@ PLATFORM_SHEETS = {
     "Flipkart": "Flipkart",
     "Myntra": "Myntra",
     "Shopify": "Shopify",
+    "Eternz": "Eternz",
+    "Tata Cliq": "Tata Cliq",
 }
 
 # Default column mappings. Can be overridden by auto-detection if not found.
@@ -42,6 +44,8 @@ COLUMN_MAPPINGS = {
     "Flipkart": {"sku": "SKU", "price": "Selling Price"},
     "Myntra": {"sku": "SKU", "price": "MRP"},
     "Shopify": {"sku": "SKU", "price": "Price"},
+    "Eternz": {"sku": "SKU", "price": "Price"},
+    "Tata Cliq": {"sku": "SKU", "price": "Price"},
 }
 
 # Google Sheets configuration (hardcoded for internal deployment)

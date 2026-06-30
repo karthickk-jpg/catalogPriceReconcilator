@@ -23,6 +23,9 @@ def reconcile(payload: dict) -> dict:
 
     from services.spreadsheet_reader import read_all_platform_sheets
     from core.engine import ReconciliationInput, run_reconciliation_engine
+    from utils.helpers import get_logger
+
+    logger = get_logger("api.routes.reconcile")
 
     # Thresholds (optional)
     low = float(payload.get("low_threshold", DEFAULT_LOW_THRESHOLD))
@@ -76,40 +79,52 @@ def reconcile(payload: dict) -> dict:
             delete_live_snapshot_runs,
         )
 
-        # For now, store as a historical run to avoid relying on legacy live snapshot layer.
-        run_id = create_reconciliation_run(db, run_type="historical", run_name="API Reconcile")
-        if not result.success:
-            update_reconciliation_run_status(db, run_id, "Failed", error_message=result.message)
+        try:
+            # For now, store as a historical run to avoid relying on legacy live snapshot layer.
+            run_id = create_reconciliation_run(db, run_type="historical", run_name="API Reconcile")
+            if not result.success:
+                update_reconciliation_run_status(db, run_id, "Failed", error_message=result.message)
+                return {
+                    "ok": False,
+                    "success": False,
+                    "run_id": run_id,
+                    "message": result.message,
+                    "warnings": result.warnings or [],
+                }
+
+            # Persist comparison rows
+            if result.comparison_df is not None and len(result.comparison_df) > 0:
+                # Reuse existing persistence schema: expects list[dict] comparison_rows
+                comparison_rows = result.comparison_df.to_dict("records")
+                save_comparison_details(db, run_id, comparison_rows)
+
+            # Update run summary
+            update_reconciliation_run_status(db, run_id, "Completed", run_summary=result.run_summary)
+
+            # Prepare comparison rows payload if available so UI can render immediately
+            comparison_rows = None
+            if result.comparison_df is not None and len(result.comparison_df) > 0:
+                comparison_rows = result.comparison_df.to_dict("records")
+
+            return {
+                "ok": True,
+                "success": True,
+                "run_id": run_id,
+                "message": result.message,
+                "run_summary": result.run_summary,
+                "comparison_rows": comparison_rows,
+                "warnings": result.warnings or [],
+            }
+        except Exception as exc:
+            logger.exception("Reconciliation persistence failed")
+            try:
+                update_reconciliation_run_status(db, run_id, "Failed", error_message=str(exc))
+            except Exception:
+                pass
             return {
                 "ok": False,
                 "success": False,
-                "run_id": run_id,
-                "message": result.message,
-                "warnings": result.warnings or [],
+                "message": f"Reconciliation failed while storing results: {exc}",
             }
-
-        # Persist comparison rows
-        if result.comparison_df is not None and len(result.comparison_df) > 0:
-            # Reuse existing persistence schema: expects list[dict] comparison_rows
-            comparison_rows = result.comparison_df.to_dict("records")
-            save_comparison_details(db, run_id, comparison_rows)
-
-        # Update run summary
-        update_reconciliation_run_status(db, run_id, "Completed", run_summary=result.run_summary)
-
-        # Prepare comparison rows payload if available so UI can render immediately
-        comparison_rows = None
-        if result.comparison_df is not None and len(result.comparison_df) > 0:
-            comparison_rows = result.comparison_df.to_dict("records")
-
-        return {
-            "ok": True,
-            "success": True,
-            "run_id": run_id,
-            "message": result.message,
-            "run_summary": result.run_summary,
-            "comparison_rows": comparison_rows,
-            "warnings": result.warnings or [],
-        }
 
 
