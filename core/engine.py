@@ -5,9 +5,7 @@ from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 
-# NOTE: core engine must be framework/UI agnostic, but for Phase-2 we still
-# reuse existing business logic modules.
-# This file intentionally contains no Streamlit, FastAPI, or DB imports.
+# Core engine is framework/UI agnostic — no Streamlit or external service imports.
 from services.validator import validate_dataframe
 from services.comparer import reconcile_prices
 

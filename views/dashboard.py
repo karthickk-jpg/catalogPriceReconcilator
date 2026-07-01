@@ -1,11 +1,10 @@
-import os
 from datetime import datetime
 
 import pandas as pd
-import requests
 import streamlit as st
 
 from config.settings import SUPPORTED_PLATFORMS
+from services.reconciliation import run_live_reconciliation
 from utils.helpers import get_logger
 
 logger = get_logger("views.dashboard")
@@ -37,74 +36,16 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.set_page_config(layout="wide")
-
-st.title("Catalog Price Validation Portal")
-# st.caption("Live comparison of WMS prices against marketplaces")
-
 
 def _get_last_refreshed_ts() -> str:
     ts = st.session_state.get("last_refreshed_ts")
     return ts.strftime("%Y-%m-%d %H:%M:%S") if ts else "Not yet"
 
 
-def _run_local_reconciliation() -> dict:
-    """Fallback reconciliation path for deployments without a separate API process."""
-    from database.connection import get_db
-    from services.spreadsheet_reader import read_all_platform_sheets, resolve_column_mapping
-    from core.engine import ReconciliationInput, run_reconciliation_engine
-
-    with get_db() as db:
-        sheets = read_all_platform_sheets(session=db)
-        if "WMS" not in sheets or sheets["WMS"].empty:
-            return {"success": False, "message": "WMS sheet missing or empty", "run_summary": {}, "comparison_df": pd.DataFrame()}
-
-        wms_sku_col, wms_price_col = resolve_column_mapping("WMS", sheets["WMS"])
-        marketplace_datasets = {}
-        from config.settings import SUPPORTED_PLATFORMS
-
-        for platform in SUPPORTED_PLATFORMS:
-            if platform not in sheets or sheets[platform].empty:
-                continue
-            sku_col, price_col = resolve_column_mapping(platform, sheets[platform])
-            marketplace_datasets[platform] = (sheets[platform], sku_col, price_col)
-
-        engine_inp = ReconciliationInput(
-            wms_df=sheets["WMS"],
-            wms_sku_col=wms_sku_col,
-            wms_price_col=wms_price_col,
-            marketplace_datasets=marketplace_datasets,
-            low_threshold=1.0,
-            medium_threshold=5.0,
-        )
-        result = run_reconciliation_engine(engine_inp)
-        return {
-            "success": result.success,
-            "message": result.message,
-            "run_summary": result.run_summary or {},
-            "comparison_df": result.comparison_df if result.comparison_df is not None else pd.DataFrame(),
-        }
-
-
-def get_live_data():
-    """Calls the reconcile API when available and falls back to local execution otherwise."""
-    api_base_url = os.getenv("CPRP_API_BASE_URL", "http://127.0.0.1:8004").rstrip("/")
-    try:
-        resp = requests.post(f"{api_base_url}/reconcile", json={"run_type": "historical"}, timeout=120)
-        resp.raise_for_status()
-        data = resp.json()
-        comparison_rows = data.get("comparison_rows") or data.get("comparison") or data.get("comparison_df")
-        data["comparison_df"] = pd.DataFrame(comparison_rows) if comparison_rows else pd.DataFrame()
-        return data
-    except Exception as exc:
-        logger.warning(f"API reconcile unavailable, using local fallback: {exc}", exc_info=True)
-        return _run_local_reconciliation()
-
-
 @st.cache_data(show_spinner=False, ttl=60, max_entries=1)
 def _get_cached_live_data():
     """Reuse the last successful reconciliation result for a short window."""
-    return get_live_data()
+    return run_live_reconciliation()
 
 
 def _render_kpi_card(title: str, value: int) -> None:
@@ -153,88 +94,94 @@ def _download_for(platform: str, col_key: str, mismatch_df: pd.DataFrame) -> Non
     )
 
 
-header_left, header_right = st.columns([3, 1])
-with header_left:
-    # st.markdown("#### Marketplace reconciliation powered by Google Sheets")
-    st.write(f"Last Updated: {_get_last_refreshed_ts()}")
-with header_right:
-    if st.button("Refresh dashboard", type="secondary", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+def render_dashboard() -> None:
+    st.title("Catalog Price Validation Portal")
 
-try:
-    live_data_result = _get_cached_live_data()
-    if live_data_result.get("success"):
-        st.session_state["last_refreshed_ts"] = datetime.now()
-    else:
-        st.error(live_data_result.get("message", "An unknown error occurred."))
-        st.stop()
+    header_left, header_right = st.columns([3, 1])
+    with header_left:
+        st.write(f"Last Updated: {_get_last_refreshed_ts()}")
+    with header_right:
+        if st.button("Refresh dashboard", type="secondary", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
 
-    run_summary = live_data_result.get("run_summary", {})
-    comparison_df = live_data_result.get("comparison_df", pd.DataFrame())
-    price_mismatch_severities = ["Low Mismatch", "Medium Mismatch", "Critical Mismatch"]
-    mismatch_df = (
-        comparison_df[comparison_df["severity"].isin(price_mismatch_severities)].copy()
-        if not comparison_df.empty
-        else pd.DataFrame()
-    )
-    if not mismatch_df.empty:
-        severity_rank = {"Low Mismatch": 1, "Medium Mismatch": 2, "Critical Mismatch": 3}
-        mismatch_df = mismatch_df.copy()
-        mismatch_df["_severity_rank"] = mismatch_df["severity"].map(severity_rank)
-        mismatch_df = mismatch_df.sort_values(["marketplace", "sku", "_severity_rank"], ascending=[True, True, False])
-        mismatch_df = mismatch_df.drop_duplicates(subset=["marketplace", "sku"], keep="first")
-        mismatch_df = mismatch_df.drop(columns=["_severity_rank"])
-    platform_mismatch_counts = {
-        p: int((mismatch_df["marketplace"] == p).sum()) for p in SUPPORTED_PLATFORMS
-    }
-    total_mismatches = int(len(mismatch_df))
-    total_design_nos = int(run_summary.get("total_skus", 0))
-except Exception as exc:
-    st.exception(exc)
-
-summary_platforms = list(SUPPORTED_PLATFORMS)
-summary_cols = st.columns(len(summary_platforms) + 2)
-with summary_cols[0]:
-    _render_kpi_card("Total Design Nos", total_design_nos)
-for idx, platform in enumerate(summary_platforms, start=1):
-    with summary_cols[idx]:
-        _render_kpi_card(f"{platform} Mismatches", platform_mismatch_counts.get(platform, 0))
-with summary_cols[len(summary_platforms) + 1]:
-    _render_kpi_card("Total Mismatches", total_mismatches)
-
-with st.container():
-    f1, f2, f3 = st.columns([2, 3, 2])
-    with f1:
-        platform_filter = st.selectbox("Platform", options=["All"] + SUPPORTED_PLATFORMS, index=0)
-    with f2:
-        search_design_no = st.text_input("Design No Search")
-    with f3:
-        show_mismatches_only = st.toggle("Show mismatches only", value=True)
-
-base_df = mismatch_df if show_mismatches_only else comparison_df
-filtered = base_df.copy()
-if platform_filter != "All":
-    filtered = filtered[filtered["marketplace"] == platform_filter]
-query = search_design_no.strip().lower()
-if query:
-    filtered = filtered[filtered["sku"].astype(str).str.lower().str.contains(query, na=False)]
-
-st.markdown("### Mismatch Details" if show_mismatches_only else "### All Reconciliation Results")
-
-export_cols = st.columns(len(SUPPORTED_PLATFORMS))
-for idx, platform in enumerate(SUPPORTED_PLATFORMS):
-    with export_cols[idx]:
-        st.markdown(f"**{platform}**")
-        count = platform_mismatch_counts.get(platform, 0)
-        st.write(f"{count:,} mismatches")
-        if count > 0:
-            _download_for(platform, f"dl_{platform.lower()}", mismatch_df)
+    try:
+        live_data_result = _get_cached_live_data()
+        if live_data_result.get("success"):
+            st.session_state["last_refreshed_ts"] = datetime.now()
         else:
-            st.caption("No export available")
+            st.error(live_data_result.get("message", "An unknown error occurred."))
+            st.stop()
 
-if filtered.empty:
-    st.info("No records found for the selected filters. Adjust platform or search criteria to view data.")
-else:
-    display_df = _to_display_df(filtered)
-    st.dataframe(display_df, use_container_width=True)
+        run_summary = live_data_result.get("run_summary", {})
+        comparison_df = live_data_result.get("comparison_df", pd.DataFrame())
+        price_mismatch_severities = ["Low Mismatch", "Medium Mismatch", "Critical Mismatch"]
+        mismatch_df = (
+            comparison_df[comparison_df["severity"].isin(price_mismatch_severities)].copy()
+            if not comparison_df.empty
+            else pd.DataFrame()
+        )
+        if not mismatch_df.empty:
+            severity_rank = {"Low Mismatch": 1, "Medium Mismatch": 2, "Critical Mismatch": 3}
+            mismatch_df = mismatch_df.copy()
+            mismatch_df["_severity_rank"] = mismatch_df["severity"].map(severity_rank)
+            mismatch_df = mismatch_df.sort_values(
+                ["marketplace", "sku", "_severity_rank"], ascending=[True, True, False]
+            )
+            mismatch_df = mismatch_df.drop_duplicates(subset=["marketplace", "sku"], keep="first")
+            mismatch_df = mismatch_df.drop(columns=["_severity_rank"])
+        platform_mismatch_counts = {
+            p: int((mismatch_df["marketplace"] == p).sum()) for p in SUPPORTED_PLATFORMS
+        }
+        total_mismatches = int(len(mismatch_df))
+        total_design_nos = int(run_summary.get("total_skus", 0))
+    except Exception as exc:
+        logger.exception("Dashboard render failed")
+        st.exception(exc)
+        return
+
+    summary_platforms = list(SUPPORTED_PLATFORMS)
+    summary_cols = st.columns(len(summary_platforms) + 2)
+    with summary_cols[0]:
+        _render_kpi_card("Total Design Nos", total_design_nos)
+    for idx, platform in enumerate(summary_platforms, start=1):
+        with summary_cols[idx]:
+            _render_kpi_card(f"{platform} Mismatches", platform_mismatch_counts.get(platform, 0))
+    with summary_cols[len(summary_platforms) + 1]:
+        _render_kpi_card("Total Mismatches", total_mismatches)
+
+    with st.container():
+        f1, f2, f3 = st.columns([2, 3, 2])
+        with f1:
+            platform_filter = st.selectbox("Platform", options=["All"] + SUPPORTED_PLATFORMS, index=0)
+        with f2:
+            search_design_no = st.text_input("Design No Search")
+        with f3:
+            show_mismatches_only = st.toggle("Show mismatches only", value=True)
+
+    base_df = mismatch_df if show_mismatches_only else comparison_df
+    filtered = base_df.copy()
+    if platform_filter != "All":
+        filtered = filtered[filtered["marketplace"] == platform_filter]
+    query = search_design_no.strip().lower()
+    if query:
+        filtered = filtered[filtered["sku"].astype(str).str.lower().str.contains(query, na=False)]
+
+    st.markdown("### Mismatch Details" if show_mismatches_only else "### All Reconciliation Results")
+
+    export_cols = st.columns(len(SUPPORTED_PLATFORMS))
+    for idx, platform in enumerate(SUPPORTED_PLATFORMS):
+        with export_cols[idx]:
+            st.markdown(f"**{platform}**")
+            count = platform_mismatch_counts.get(platform, 0)
+            st.write(f"{count:,} mismatches")
+            if count > 0:
+                _download_for(platform, f"dl_{platform.lower()}", mismatch_df)
+            else:
+                st.caption("No export available")
+
+    if filtered.empty:
+        st.info("No records found for the selected filters. Adjust platform or search criteria to view data.")
+    else:
+        display_df = _to_display_df(filtered)
+        st.dataframe(display_df, use_container_width=True)

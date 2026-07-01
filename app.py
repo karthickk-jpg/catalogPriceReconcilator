@@ -1,35 +1,23 @@
+import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 import streamlit as st
-from database.connection import init_db
+
 from utils.helpers import get_logger
 
-# Initialize application logger
 logger = get_logger("app")
 
-# Page Configuration
 st.set_page_config(
     page_title="Catalog Price Validation Portal",
     page_icon="🔍",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed",
 )
 
-# Initialize database schemas on application startup
-try:
-    init_db()
-except Exception as e:
-    st.error("Failed to connect or initialize the local database. See application logs for details.")
-    logger.critical(f"Critical error during database setup: {str(e)}", exc_info=True)
+from views.dashboard import render_dashboard
 
-# Define native Streamlit dashboard view
-dashboard_page = st.Page(
-    "views/dashboard.py", 
-    title="Dashboard", 
-    icon="📊",
-    default=True
-)
-
-# Build navigation menu structure for Dashboard-only
-pg = st.navigation([dashboard_page])
-
-# Run navigation engine
-pg.run()
+render_dashboard()

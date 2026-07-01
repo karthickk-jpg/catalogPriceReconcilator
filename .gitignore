@@ -16,3 +16,6 @@ __pycache__/
 /reports/
 /logs/
 /uploads/
+
+# Streamlit secrets (local only)
+.streamlit/secrets.toml
