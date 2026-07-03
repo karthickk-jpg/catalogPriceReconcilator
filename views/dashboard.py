@@ -184,4 +184,4 @@ def render_dashboard() -> None:
         st.info("No records found for the selected filters. Adjust platform or search criteria to view data.")
     else:
         display_df = _to_display_df(filtered)
-        st.dataframe(display_df.style.hide_index(), use_container_width=True)
+        st.dataframe(display_df.to_dict("records"), use_container_width=True)
