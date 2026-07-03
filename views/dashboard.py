@@ -36,12 +36,23 @@ st.markdown(
         position: absolute;
         top: 14px;
         right: 14px;
-        font-size: 18px;
-        color: #0f172a;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.06);
+        border: 1px solid rgba(15, 23, 42, 0.12);
         text-decoration: none;
       }
+      .kpi-download-icon svg {
+        width: 14px;
+        height: 14px;
+        stroke: #0f172a;
+      }
       .kpi-download-icon:hover {
-        opacity: 0.8;
+        background: rgba(15, 23, 42, 0.12);
       }
 
       div[data-testid="stDataFrame"] { border-radius: 8px; }
@@ -73,11 +84,23 @@ def _render_kpi_card(
     download_icon = ""
     if download_href and download_filename and not download_disabled:
         download_icon = (
-            f"<a class='kpi-download-icon' href='{download_href}' download='{download_filename}'>📥</a>"
+            "<a class='kpi-download-icon' href='" + download_href + "' download='" + download_filename + "'>"
+            "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>"
+            "<path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/>"
+            "<polyline points='7 10 12 15 17 10'/>"
+            "<line x1='12' y1='15' x2='12' y2='3'/>"
+            "</svg>"
+            "</a>"
         )
     elif download_disabled:
         download_icon = (
-            "<span class='kpi-download-icon' style='opacity:0.35; cursor:default;'>📥</span>"
+            "<span class='kpi-download-icon' style='opacity:0.35; cursor:default;'>"
+            "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>"
+            "<path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/>"
+            "<polyline points='7 10 12 15 17 10'/>"
+            "<line x1='12' y1='15' x2='12' y2='3'/>"
+            "</svg>"
+            "</span>"
         )
 
     st.markdown(
