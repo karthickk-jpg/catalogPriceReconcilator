@@ -147,10 +147,10 @@ def render_dashboard() -> None:
     for idx, platform in enumerate(summary_platforms, start=1):
         with summary_cols[idx]:
             platform_count = platform_mismatch_counts.get(platform, 0)
-            kpi_col, download_col = st.columns([4, 1])
-            with kpi_col:
+            row_col, button_col = st.columns([4, 1])
+            with row_col:
                 _render_kpi_card(f"{platform} Mismatches", platform_count)
-            with download_col:
+            with button_col:
                 if platform_count > 0:
                     _download_for(platform, f"dl_{platform.lower()}", mismatch_df, label="⬇")
                 else:
