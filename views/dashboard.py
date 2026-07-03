@@ -1,4 +1,5 @@
 from datetime import datetime
+import base64
 
 import pandas as pd
 import streamlit as st
@@ -19,15 +20,29 @@ st.markdown(
       h1, .stTitle { margin-bottom: 0.25rem; }
 
       .kpi-card {
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 10px 12px;
+        position: relative;
         background: var(--card);
-        box-shadow: var(--shadow);
-        min-height: 58px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 18px;
+        padding: 20px 20px 24px;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+        min-height: 110px;
+        color: var(--text);
+        text-align: center;
       }
-      .kpi-title { font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
-      .kpi-value { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.1; }
+      .kpi-title { font-size: 12px; color: var(--muted); margin-bottom: 8px; font-weight: 600; text-align: left; }
+      .kpi-value { font-size: 28px; font-weight: 800; color: var(--text); line-height: 1.1; margin-top: 10px; }
+      .kpi-download-icon {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        font-size: 18px;
+        color: #0f172a;
+        text-decoration: none;
+      }
+      .kpi-download-icon:hover {
+        opacity: 0.8;
+      }
 
       div[data-testid="stDataFrame"] { border-radius: 8px; }
       section[data-testid="stSidebar"] { width: 240px; }
@@ -48,11 +63,55 @@ def _get_cached_live_data():
     return run_live_reconciliation()
 
 
-def _render_kpi_card(title: str, value: int) -> None:
+def _render_kpi_card(
+    title: str,
+    value: int,
+    download_href: str | None = None,
+    download_filename: str | None = None,
+    download_disabled: bool = False,
+) -> None:
+    download_icon = ""
+    if download_href and download_filename and not download_disabled:
+        download_icon = (
+            f"<a class='kpi-download-icon' href='{download_href}' download='{download_filename}'>📥</a>"
+        )
+    elif download_disabled:
+        download_icon = (
+            "<span class='kpi-download-icon' style='opacity:0.35; cursor:default;'>📥</span>"
+        )
+
     st.markdown(
-        f"<div class='kpi-card'><div class='kpi-title'>{title}</div><div class='kpi-value'>{value:,}</div></div>",
+        f"<div class='kpi-card'>{download_icon}<div class='kpi-title'>{title}</div><div class='kpi-value'>{value:,}</div></div>",
         unsafe_allow_html=True,
     )
+
+
+def _build_export_df(platform: str, mismatch_df: pd.DataFrame) -> pd.DataFrame:
+    dfp = mismatch_df[mismatch_df["marketplace"] == platform]
+    return dfp[["sku", "marketplace", "wms_price", "marketplace_price"]].rename(
+        columns={
+            "sku": "Design No",
+            "marketplace": "Channel",
+            "wms_price": "WMS Price",
+            "marketplace_price": "Channel price",
+        }
+    )
+
+
+def _build_download_link(platform: str, mismatch_df: pd.DataFrame) -> tuple[str, str] | None:
+    if mismatch_df.empty:
+        return None
+
+    export_df = _build_export_df(platform, mismatch_df)
+    if export_df.empty:
+        return None
+
+    file_name = f"CPRP_Mismatches_{platform}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    href = (
+        "data:text/csv;base64,"
+        + base64.b64encode(_to_csv_bytes(export_df)).decode("utf-8")
+    )
+    return href, file_name
 
 
 def _to_display_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -147,14 +206,18 @@ def render_dashboard() -> None:
     for idx, platform in enumerate(summary_platforms, start=1):
         with summary_cols[idx]:
             platform_count = platform_mismatch_counts.get(platform, 0)
-            row_col, button_col = st.columns([4, 1])
-            with row_col:
-                _render_kpi_card(f"{platform} Mismatches", platform_count)
-            with button_col:
-                if platform_count > 0:
-                    _download_for(platform, f"dl_{platform.lower()}", mismatch_df, label="⬇")
-                else:
-                    st.write("")
+            download_data = _build_download_link(platform, mismatch_df)
+            if download_data:
+                download_href, download_filename = download_data
+            else:
+                download_href, download_filename = None, None
+            _render_kpi_card(
+                f"{platform} Mismatches",
+                platform_count,
+                download_href=download_href,
+                download_filename=download_filename,
+                download_disabled=platform_count == 0,
+            )
     with summary_cols[len(summary_platforms) + 1]:
         _render_kpi_card("Total Mismatches", total_mismatches)
 
