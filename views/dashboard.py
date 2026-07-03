@@ -72,7 +72,7 @@ def _to_csv_bytes(df: pd.DataFrame) -> bytes:
     return df.to_csv(index=False).encode("utf-8")
 
 
-def _download_for(platform: str, col_key: str, mismatch_df: pd.DataFrame) -> None:
+def _download_for(platform: str, col_key: str, mismatch_df: pd.DataFrame, label: str | None = None) -> None:
     if mismatch_df.empty:
         return
     dfp = mismatch_df[mismatch_df["marketplace"] == platform]
@@ -85,7 +85,7 @@ def _download_for(platform: str, col_key: str, mismatch_df: pd.DataFrame) -> Non
         }
     )
     st.download_button(
-        f"Download {platform} Mismatches",
+        label or f"Download {platform} Mismatches",
         data=_to_csv_bytes(out),
         file_name=f"CPRP_Mismatches_{platform}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
         mime="text/csv",
@@ -146,7 +146,15 @@ def render_dashboard() -> None:
         _render_kpi_card("Total Design Nos", total_design_nos)
     for idx, platform in enumerate(summary_platforms, start=1):
         with summary_cols[idx]:
-            _render_kpi_card(f"{platform} Mismatches", platform_mismatch_counts.get(platform, 0))
+            platform_count = platform_mismatch_counts.get(platform, 0)
+            kpi_col, download_col = st.columns([4, 1])
+            with kpi_col:
+                _render_kpi_card(f"{platform} Mismatches", platform_count)
+            with download_col:
+                if platform_count > 0:
+                    _download_for(platform, f"dl_{platform.lower()}", mismatch_df, label="⬇")
+                else:
+                    st.write("")
     with summary_cols[len(summary_platforms) + 1]:
         _render_kpi_card("Total Mismatches", total_mismatches)
 
@@ -168,17 +176,6 @@ def render_dashboard() -> None:
         filtered = filtered[filtered["sku"].astype(str).str.lower().str.contains(query, na=False)]
 
     st.markdown("### Mismatch Details" if show_mismatches_only else "### All Reconciliation Results")
-
-    download_cols = st.columns(len(SUPPORTED_PLATFORMS))
-    for idx, platform in enumerate(SUPPORTED_PLATFORMS):
-        with download_cols[idx]:
-            st.markdown(f"**{platform}**")
-            count = platform_mismatch_counts.get(platform, 0)
-            st.write(f"{count:,} mismatches")
-            if count > 0:
-                _download_for(platform, f"dl_{platform.lower()}", mismatch_df)
-            else:
-                st.caption("No export available")
 
     if filtered.empty:
         st.info("No records found for the selected filters. Adjust platform or search criteria to view data.")
