@@ -169,9 +169,9 @@ def render_dashboard() -> None:
 
     st.markdown("### Mismatch Details" if show_mismatches_only else "### All Reconciliation Results")
 
-    export_cols = st.columns(len(SUPPORTED_PLATFORMS))
+    download_cols = st.columns(len(SUPPORTED_PLATFORMS))
     for idx, platform in enumerate(SUPPORTED_PLATFORMS):
-        with export_cols[idx]:
+        with download_cols[idx]:
             st.markdown(f"**{platform}**")
             count = platform_mismatch_counts.get(platform, 0)
             st.write(f"{count:,} mismatches")
@@ -184,4 +184,4 @@ def render_dashboard() -> None:
         st.info("No records found for the selected filters. Adjust platform or search criteria to view data.")
     else:
         display_df = _to_display_df(filtered)
-        st.dataframe(display_df, use_container_width=True)
+        st.dataframe(display_df.style.hide_index(), use_container_width=True)
