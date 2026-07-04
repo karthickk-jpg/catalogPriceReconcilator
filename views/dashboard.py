@@ -13,42 +13,148 @@ logger = get_logger("views.dashboard")
 st.markdown(
     """
     <style>
-      :root { --bg: #F5F7FA; --card: #FFFFFF; --text: #101828; --muted: #667085; --border: rgba(16,24,40,0.10); --shadow: 0 1px 2px rgba(16,24,40,0.06); }
+      :root {
+        --bg: #F5F7FA;
+        --card: #FFFFFF;
+        --title: #111827;
+        --text: #111827;
+        --muted: #6B7280;
+        --border: rgba(0,0,0,0.05);
+        --shadow: 0 4px 12px rgba(15,23,42,0.05), 0 10px 28px rgba(15,23,42,0.08);
+      }
 
       body { background: var(--bg); }
-      section.main > div { padding-top: 6px; }
-      h1, .stTitle { margin-bottom: 0.25rem; }
+      .stApp { background: var(--bg); }
+      section.main > div { padding-top: 8px; padding-bottom: 2rem; }
+      .block-container {
+        padding: 1.35rem 1.7rem 2rem;
+        max-width: 1440px;
+      }
+      h1, .stTitle {
+        font-size: 2.15rem !important;
+        font-weight: 800 !important;
+        color: var(--title) !important;
+        letter-spacing: -0.02em;
+        margin-bottom: 0.35rem;
+      }
+      div[data-testid="stMarkdownContainer"] p {
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
 
       .kpi-card {
         position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
         background: var(--card);
-        border: 1px solid rgba(148, 163, 184, 0.24);
+        border: 1px solid var(--border);
         border-radius: 18px;
-        padding: 20px 20px 24px;
-        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-        min-height: 110px;
+        padding: 22px 22px 24px;
+        box-shadow: var(--shadow);
+        min-height: 132px;
         color: var(--text);
-        text-align: center;
+        text-align: left;
+        margin: 0 0 1rem;
+        transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
       }
-      .kpi-title { font-size: 12px; color: var(--muted); margin-bottom: 8px; font-weight: 600; text-align: left; }
-      .kpi-value { font-size: 28px; font-weight: 800; color: var(--text); line-height: 1.1; margin-top: 10px; }
-            .kpi-download-icon {
-                position: absolute;
-                top: 10px;
-                right: 10px;
-                text-decoration: none;
-            }
-            .kpi-download-icon svg {
-                width: 12px;
-                height: 12px;
-                stroke: #0f172a;
-            }
-            .kpi-download-icon:hover svg {
-                opacity: 0.85;
-            }
+      .kpi-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(15,23,42,0.08), 0 14px 32px rgba(15,23,42,0.12);
+        border-color: rgba(37,99,235,0.16);
+      }
+      .kpi-title {
+        font-size: 14px;
+        color: var(--muted);
+        margin-bottom: 10px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+      .kpi-value {
+        font-size: 40px;
+        font-weight: 800;
+        color: var(--title);
+        line-height: 1.05;
+        margin-top: 4px;
+      }
+      .kpi-download-icon {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        background: rgba(15,23,42,0.03);
+        text-decoration: none;
+        transition: all 180ms ease;
+      }
+      .kpi-download-icon svg {
+        width: 16px;
+        height: 16px;
+        stroke: #6B7280;
+        transition: stroke 180ms ease, transform 180ms ease;
+      }
+      .kpi-download-icon:hover {
+        background: rgba(37,99,235,0.10);
+      }
+      .kpi-download-icon:hover svg {
+        stroke: #2563EB;
+        transform: translateY(-1px);
+      }
 
-      div[data-testid="stDataFrame"] { border-radius: 8px; }
+      div[data-testid="stDataFrame"] {
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow);
+        width: 100%;
+      }
+      div[data-testid="stDataFrame"] .dataframe {
+        border-radius: 16px;
+      }
       section[data-testid="stSidebar"] { width: 240px; }
+
+      div.stButton > button,
+      div.stDownloadButton > button {
+        border: 1px solid rgba(0,0,0,0.08);
+        border-radius: 10px;
+        padding: 0.6rem 0.95rem;
+        box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+        background: #FFFFFF;
+        color: var(--title);
+        font-weight: 600;
+        transition: all 180ms ease;
+      }
+      div.stButton > button:hover,
+      div.stDownloadButton > button:hover {
+        border-color: rgba(37,99,235,0.18);
+        box-shadow: 0 6px 16px rgba(15,23,42,0.08);
+        transform: translateY(-1px);
+      }
+
+      .stTextInput > div > div > input,
+      .stSelectbox > div > div {
+        border-radius: 10px !important;
+        border: 1px solid rgba(0,0,0,0.08) !important;
+        box-shadow: none !important;
+        min-height: 42px;
+      }
+      .stTextInput > div > div > input:focus,
+      .stSelectbox > div > div:focus-within {
+        border-color: rgba(37,99,235,0.28) !important;
+        box-shadow: 0 0 0 3px rgba(37,99,235,0.10) !important;
+      }
+      .stSelectbox {
+        margin-bottom: 0.25rem;
+      }
+      .stTextInput {
+        margin-bottom: 0.25rem;
+      }
+      .stToggle {
+        margin-top: 0.2rem;
+      }
     </style>
     """,
     unsafe_allow_html=True,
