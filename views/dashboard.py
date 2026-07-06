@@ -44,24 +44,24 @@ st.markdown(
 
       .kpi-card {
         position: relative;
-        display: flex;
+        display: flex !important;
         flex-direction: column;
         justify-content: center;
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 18px;
-        padding: 22px 22px 24px;
-        box-shadow: var(--shadow);
+        background: #FFFFFF !important;
+        border: 1px solid rgba(0,0,0,0.10) !important;
+        border-radius: 18px !important;
+        padding: 22px 22px 24px !important;
+        box-shadow: 0 4px 12px rgba(15,23,42,0.06), 0 10px 28px rgba(15,23,42,0.10) !important;
         min-height: 132px;
-        color: var(--text);
+        color: #111827 !important;
         text-align: left;
         margin: 0 0 1rem;
         transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
       }
       .kpi-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(15,23,42,0.08), 0 14px 32px rgba(15,23,42,0.12);
-        border-color: rgba(37,99,235,0.16);
+        box-shadow: 0 8px 20px rgba(15,23,42,0.10), 0 14px 32px rgba(15,23,42,0.14) !important;
+        border-color: rgba(37,99,235,0.22) !important;
       }
       .kpi-title {
         font-size: 14px;
@@ -81,18 +81,21 @@ st.markdown(
         position: absolute;
         top: 12px;
         right: 12px;
-        width: 34px;
-        height: 34px;
+        width: 34px !important;
+        height: 34px !important;
         display: grid;
         place-items: center;
         border-radius: 999px;
-        background: rgba(15,23,42,0.03);
+        background: rgba(15,23,42,0.05);
         text-decoration: none;
+        overflow: hidden;
         transition: all 180ms ease;
       }
       .kpi-download-icon svg {
-        width: 16px;
-        height: 16px;
+        width: 16px !important;
+        height: 16px !important;
+        max-width: 16px !important;
+        max-height: 16px !important;
         stroke: #6B7280;
         transition: stroke 180ms ease, transform 180ms ease;
       }
@@ -179,11 +182,37 @@ def _render_kpi_card(
     download_filename: str | None = None,
     download_disabled: bool = False,
 ) -> None:
+    # ── inline styles (Streamlit scopes CSS per-markdown block, so classes
+    #    from a separate <style> tag are unreliable – inline styles are the
+    #    only way to guarantee rendering) ──
+    card_style = (
+        "position:relative; display:flex; flex-direction:column; justify-content:center;"
+        " background:#FFFFFF; border:1px solid rgba(0,0,0,0.10); border-radius:18px;"
+        " padding:22px 22px 24px; box-shadow:0 4px 12px rgba(15,23,42,0.06),"
+        " 0 10px 28px rgba(15,23,42,0.10); min-height:132px; color:#111827;"
+        " text-align:left; margin:0 0 1rem;"
+        " transition:transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;"
+    )
+    title_style = (
+        "font-size:14px; color:#6B7280; margin-bottom:10px;"
+        " font-weight:600; letter-spacing:0.01em;"
+    )
+    value_style = (
+        "font-size:40px; font-weight:800; color:#111827;"
+        " line-height:1.05; margin-top:4px;"
+    )
+    icon_style = (
+        "position:absolute; top:12px; right:12px; width:34px; height:34px;"
+        " display:grid; place-items:center; border-radius:999px;"
+        " background:rgba(15,23,42,0.05); text-decoration:none;"
+        " overflow:hidden; transition:all 180ms ease;"
+    )
+
     download_icon = ""
     if download_href and download_filename and not download_disabled:
         download_icon = (
-            "<a class='kpi-download-icon' href='" + download_href + "' download='" + download_filename + "'>"
-            "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>"
+            "<a style='" + icon_style + "' href='" + download_href + "' download='" + download_filename + "'>"
+            "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='#6B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>"
             "<path d='M12 3v12' />"
             "<polyline points='7 10 12 15 17 10' />"
             "<path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' />"
@@ -192,8 +221,8 @@ def _render_kpi_card(
         )
     elif download_disabled:
         download_icon = (
-            "<span class='kpi-download-icon' style='opacity:0.35; cursor:default;'>"
-            "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>"
+            "<span style='" + icon_style + " opacity:0.35; cursor:default;'>"
+            "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='#6B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>"
             "<path d='M12 3v12' />"
             "<polyline points='7 10 12 15 17 10' />"
             "<path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' />"
@@ -202,7 +231,9 @@ def _render_kpi_card(
         )
 
     st.markdown(
-        f"<div class='kpi-card'>{download_icon}<div class='kpi-title'>{title}</div><div class='kpi-value'>{value:,}</div></div>",
+        f"<div style='{card_style}'>{download_icon}"
+        f"<div style='{title_style}'>{title}</div>"
+        f"<div style='{value_style}'>{value:,}</div></div>",
         unsafe_allow_html=True,
     )
 
